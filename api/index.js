@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
+const META_ACCESS_TOKEN = "EAAdxJndK0e0BQUELAjLlVWz8rrBTtg4h43b8vfEyr0lAchROtY7BP9EKtqZCTrcsRwVWGrrPPHMBi03Pqj5zIMhvm7KPQy571yEY2H6tXTR5cg6oFhxXVzdC9mZBdTuXTi4acQpp90D7MyPpdanZA69T0c7w8vxA5zum9VUt4JkNQUqPLdfVdU8sGiqFkkwT1snABOZB7V2vroiJZCDZADZA5dlEwZDZD";
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -41,10 +41,10 @@ module.exports = async (req, res) => {
                 
                 let result;
                 if (message_type === "comment") {
-                    if (!comment_id) throw new Error("ID de comentario no recibido por el webhook");
+                    if (!comment_id) throw new Error("ID de comentario faltante");
                     result = await callMetaAPI(`/${comment_id}/replies`, { message });
                 } else {
-                    if (!recipient_id) throw new Error("ID de destinatario no recibido por el webhook");
+                    if (!recipient_id) throw new Error("ID de destinatario faltante");
                     result = await callMetaAPI(`/me/messages`, {
                         recipient: { id: recipient_id },
                         message: { text: message }
