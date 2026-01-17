@@ -51,8 +51,8 @@ module.exports = async (req, res) => {
                     result = await callMetaAPI(`/${comment_id}/replies`, { message });
                 } else {
                     if (!recipient_id) throw new Error("Missing recipient_id for DM reply");
-                    // Cambiado de /me/messages a /PAGE_ID/messages para evitar el error de 'me' no encontrado
-                    const PAGE_ID = "457641490771604";
+                    // ID de página explícito proporcionado por el usuario: Mundocuarzos
+                    const PAGE_ID = "61586515535219";
                     result = await callMetaAPI(`/${PAGE_ID}/messages`, {
                         recipient: { id: recipient_id },
                         message: { text: message }
