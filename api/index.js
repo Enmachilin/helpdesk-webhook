@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
         if (body.action === "send_reply") {
             try {
                 const { message_type, recipient_id, message, comment_id } = body;
-                console.log(`REPLY ACTION: type=${message_type}, to=${recipient_id || comment_id}`);
+                console.log(`REPLY ATTEMPT: ${message_type} to ${recipient_id || comment_id}`);
                 
                 let result;
                 if (message_type === "comment") {
@@ -51,14 +51,16 @@ module.exports = async (req, res) => {
                     result = await callMetaAPI(`/${comment_id}/replies`, { message });
                 } else {
                     if (!recipient_id) throw new Error("Missing recipient_id for DM reply");
-                    result = await callMetaAPI(`/me/messages`, {
+                    // Cambiado de /me/messages a /PAGE_ID/messages para evitar el error de 'me' no encontrado
+                    const PAGE_ID = "457641490771604";
+                    result = await callMetaAPI(`/${PAGE_ID}/messages`, {
                         recipient: { id: recipient_id },
                         message: { text: message }
                     });
                 }
                 return res.status(200).json({ success: true, meta_response: result });
             } catch (error) {
-                console.error("META_API_FAILURE:", error.message);
+                console.error("META_API_ERROR:", error.message);
                 let displayError = error.message;
                 try {
                     const parsed = JSON.parse(error.message);
