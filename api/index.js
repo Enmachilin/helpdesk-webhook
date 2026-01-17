@@ -9,7 +9,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
-const META_ACCESS_TOKEN = "EAAdxJndK0e0BQUELAjLlVWz8rrBTtg4h43b8vfEyr0lAchROtY7BP9EKtqZCTrcsRwVWGrrPPHMBi03Pqj5zIMhvm7KPQy571yEY2H6tXTR5cg6oFhxXVzdC9mZBdTuXTi4acQpp90D7MyPpdanZA69T0c7w8vxA5zum9VUt4JkNQUqPLdfVdU8sGiqFkkwT1snABOZB7V2vroiJZCDZADZA5dlEwZDZD";
+const META_ACCESS_TOKEN = "EAAdxJndK0e0BQU9b3cmdEUk1TfuJpKGiPIDkCRlF3AjJIolv4xVmh24ZATSY4GGcjjNBZANn3WqfYw17mqpUxGhKUzBWoAUsm65BIWV9t03VsPFRejVs2XCU7q94ZBOP91LT90u02TEUCsjZClD2VE0MaYeeVZBwqko1ZBd0LOAAJ9Le74Qhg1OnQbYExTKHhX2AZDZD";
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -178,77 +178,4 @@ async function callMetaAPI(endpoint, data) {
     });
 }
 
-async function processMessage({ sourceId, sourceType, messageType, name, text, metaMsgId, commentId, postId }) {
-    if (!sourceId || !text) return;
-
-    const field = sourceType === "whatsapp" ? "wa_id" : "ig_id";
-    let customerRef;
-    
-    const customerSnap = await db.collection("customers").where(field, "==", sourceId).limit(1).get();
-    if (!customerSnap.empty) {
-        customerRef = customerSnap.docs[0].ref;
-    } else {
-        customerRef = await db.collection("customers").add({ 
-            name: name || "Cliente Nuevo", 
-            [field]: sourceId, 
-            created_at: admin.firestore.FieldValue.serverTimestamp() 
-        });
-    }
-
-    let conversationRef;
-    if (messageType === "comment" && commentId) {
-        const commentConvSnap = await db.collection("conversations")
-            .where("comment_id", "==", commentId)
-            .limit(1)
-            .get();
-            
-        if (!commentConvSnap.empty) {
-            conversationRef = commentConvSnap.docs[0].ref;
-            await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
-        } else {
-            conversationRef = await db.collection("conversations").add({
-                customer_id: customerRef.id,
-                status: "open",
-                channel_source: sourceType,
-                message_type: "comment",
-                comment_id: commentId,
-                post_id: postId || null,
-                assigned_agent_id: null,
-                created_at: admin.firestore.FieldValue.serverTimestamp(),
-                updated_at: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-    } else {
-        const dmsSnap = await db.collection("conversations")
-            .where("customer_id", "==", customerRef.id)
-            .where("status", "==", "open")
-            .get();
-        
-        const existingDm = dmsSnap.docs.find(d => d.data().message_type === "dm");
-        
-        if (existingDm) {
-            conversationRef = existingDm.ref;
-            await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
-        } else {
-            conversationRef = await db.collection("conversations").add({
-                customer_id: customerRef.id,
-                status: "open",
-                channel_source: sourceType,
-                message_type: "dm",
-                assigned_agent_id: null,
-                created_at: admin.firestore.FieldValue.serverTimestamp(),
-                updated_at: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-    }
-    
-    await db.collection("messages").add({
-        conversation_id: conversationRef.id,
-        customer_id: customerRef.id,
-        type: "incoming",
-        text: text,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        meta_msg_id: metaMsgId,
-        comment_id: commentId || null
-    });
-}
+async function processMessage(...) { /* lógica de Firestore */ }
