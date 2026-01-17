@@ -32,7 +32,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === "POST") {
-        const body = req.body;
+        const body = req.body || {};
         
         if (body.action === "send_reply") {
             try {
@@ -51,58 +51,62 @@ module.exports = async (req, res) => {
         
         try {
             if (body.object === "instagram") {
-                const entry = body.entry?.[0];
-                const messaging = entry?.messaging?.[0];
-                const changes = entry?.changes?.[0];
+                const entries = body.entry || [];
+                for (const entry of entries) {
+                    const messaging = entry?.messaging?.[0];
+                    const change = entry?.changes?.[0];
 
-                if (messaging && messaging.message && !messaging.message.is_echo) {
-                    await processMessage({
-                        sourceId: messaging.sender.id,
-                        sourceType: "instagram",
-                        messageType: "dm",
-                        text: messaging.message.text,
-                        metaMsgId: messaging.message.mid
-                    });
-                }
+                    if (messaging && messaging.message && !messaging.message.is_echo) {
+                        await processMessage({
+                            sourceId: messaging.sender.id,
+                            sourceType: "instagram",
+                            messageType: "dm",
+                            text: messaging.message.text,
+                            metaMsgId: messaging.message.mid
+                        });
+                    }
 
-                if (changes && changes.field === "comments") {
-                    const comment = changes.value;
-                    await processMessage({
-                        sourceId: comment.from.id,
-                        sourceType: "instagram",
-                        messageType: "comment",
-                        name: comment.from.username,
-                        text: comment.text,
-                        metaMsgId: comment.id,
-                        commentId: comment.id,
-                        postId: comment.media?.id
-                    });
+                    if (change && change.field === "comments") {
+                        const comment = change.value;
+                        await processMessage({
+                            sourceId: comment.from.id,
+                            sourceType: "instagram",
+                            messageType: "comment",
+                            name: comment.from.username,
+                            text: comment.text,
+                            metaMsgId: comment.id,
+                            commentId: comment.id,
+                            postId: comment.media?.id
+                        });
+                    }
                 }
             }
 
             if (body.object === "whatsapp_business_account") {
-                const entry = body.entry?.[0];
-                const changes = entry?.changes?.[0];
-                const value = changes?.value;
-                const message = value?.messages?.[0];
-                const contact = value?.contacts?.[0];
+                const entries = body.entry || [];
+                for (const entry of entries) {
+                    const change = entry?.changes?.[0];
+                    const value = change?.value;
+                    const message = value?.messages?.[0];
+                    const contact = value?.contacts?.[0];
 
-                if (message) {
-                    await processMessage({
-                        sourceId: contact.wa_id,
-                        sourceType: "whatsapp",
-                        messageType: "dm",
-                        name: contact.profile?.name,
-                        text: message.text?.body,
-                        metaMsgId: message.id
-                    });
+                    if (message) {
+                        await processMessage({
+                            sourceId: contact.wa_id,
+                            sourceType: "whatsapp",
+                            messageType: "dm",
+                            name: contact.profile?.name,
+                            text: message.text?.body,
+                            metaMsgId: message.id
+                        });
+                    }
                 }
             }
 
             return res.status(200).send("OK");
         } catch (error) {
-            console.error("Webhook Error:", error);
-            return res.status(500).send("Error");
+            console.error("Webhook Internal Error:", error);
+            return res.status(500).send(error.message);
         }
     }
     return res.status(405).send("Method Not Allowed");
@@ -160,26 +164,36 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
     const field = sourceType === "whatsapp" ? "wa_id" : "ig_id";
     let customerRef;
     const customerSnap = await db.collection("customers").where(field, "==", sourceId).limit(1).get();
-    if (!customerSnap.empty) customerRef = customerSnap.docs[0].ref;
-    else customerRef = await db.collection("customers").add({ name: name || "Cliente Nuevo", [field]: sourceId, created_at: admin.firestore.FieldValue.serverTimestamp() });
+    if (!customerSnap.empty) {
+        customerRef = customerSnap.docs[0].ref;
+    } else {
+        customerRef = await db.collection("customers").add({ name: name || "Cliente Nuevo", [field]: sourceId, created_at: admin.firestore.FieldValue.serverTimestamp() });
+    }
 
     let conversationRef;
     if (messageType === "comment" && commentId) {
-        conversationRef = await db.collection("conversations").add({
-            customer_id: customerRef.id,
-            status: "open",
-            channel_source: sourceType,
-            message_type: "comment",
-            comment_id: commentId,
-            post_id: postId || null,
-            assigned_agent_id: null,
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            updated_at: admin.firestore.FieldValue.serverTimestamp()
-        });
+        const commentConvSnap = await db.collection("conversations").where("comment_id", "==", commentId).limit(1).get();
+        if (!commentConvSnap.empty) {
+            conversationRef = commentConvSnap.docs[0].ref;
+            await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
+        } else {
+            conversationRef = await db.collection("conversations").add({
+                customer_id: customerRef.id,
+                status: "open",
+                channel_source: sourceType,
+                message_type: "comment",
+                comment_id: commentId,
+                post_id: postId || null,
+                assigned_agent_id: null,
+                created_at: admin.firestore.FieldValue.serverTimestamp(),
+                updated_at: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
     } else {
-        const convSnap = await db.collection("conversations").where("customer_id", "==", customerRef.id).where("status", "==", "open").where("message_type", "==", "dm").limit(1).get();
-        if (!convSnap.empty) {
-            conversationRef = convSnap.docs[0].ref;
+        const dmsSnap = await db.collection("conversations").where("customer_id", "==", customerRef.id).where("status", "==", "open").get();
+        const existingDm = dmsSnap.docs.find(d => d.data().message_type === "dm");
+        if (existingDm) {
+            conversationRef = existingDm.ref;
             await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
         } else {
             conversationRef = await db.collection("conversations").add({
