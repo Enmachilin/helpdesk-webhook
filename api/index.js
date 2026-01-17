@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const https = require("https");
 
 if (!admin.apps.length) {
     admin.initializeApp({
@@ -8,8 +9,19 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
 
 module.exports = async (req, res) => {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
+    // Verificacion de Webhook (GET)
     if (req.method === "GET") {
         const mode = req.query["hub.mode"];
         const token = req.query["hub.verify_token"];
@@ -22,11 +34,25 @@ module.exports = async (req, res) => {
         return res.status(403).send("Forbidden");
     }
 
+    // Procesamiento de Mensajes (POST)
     if (req.method === "POST") {
         const body = req.body;
+        
+        // Si viene del frontend para enviar mensaje
+        if (body.action === "send_reply") {
+            try {
+                await sendInstagramReply(body.recipient_id, body.message);
+                return res.status(200).json({ success: true });
+            } catch (error) {
+                console.error("Error enviando respuesta:", error);
+                return res.status(500).json({ error: error.message });
+            }
+        }
+        
         console.log("Webhook recibido:", JSON.stringify(body, null, 2));
 
         try {
+            // Instagram DMs y Comentarios
             if (body.object === "instagram") {
                 const entry = body.entry?.[0];
                 const messaging = entry?.messaging?.[0];
@@ -53,6 +79,7 @@ module.exports = async (req, res) => {
                 }
             }
 
+            // WhatsApp
             if (body.object === "whatsapp_business_account") {
                 const entry = body.entry?.[0];
                 const changes = entry?.changes?.[0];
@@ -80,6 +107,45 @@ module.exports = async (req, res) => {
 
     return res.status(405).send("Method Not Allowed");
 };
+
+// Enviar respuesta a Instagram
+async function sendInstagramReply(recipientId, messageText) {
+    return new Promise((resolve, reject) => {
+        const postData = JSON.stringify({
+            recipient: { id: recipientId },
+            message: { text: messageText }
+        });
+
+        const options = {
+            hostname: 'graph.facebook.com',
+            port: 443,
+            path: `/v21.0/me/messages?access_token=${META_ACCESS_TOKEN}`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+
+        const request = https.request(options, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+                if (response.statusCode >= 200 && response.statusCode < 300) {
+                    console.log("Mensaje enviado a Instagram:", data);
+                    resolve(JSON.parse(data));
+                } else {
+                    console.error("Error de Instagram API:", data);
+                    reject(new Error(data));
+                }
+            });
+        });
+
+        request.on('error', reject);
+        request.write(postData);
+        request.end();
+    });
+}
 
 async function processMessage({ sourceId, sourceType, name, text, metaMsgId }) {
     const field = sourceType === "whatsapp" ? "wa_id" : "ig_id";
