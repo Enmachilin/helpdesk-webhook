@@ -20,7 +20,6 @@ module.exports = async (req, res) => {
         return res.status(200).end();
     }
 
-    // Verificacion de Webhook (GET)
     if (req.method === "GET") {
         const mode = req.query["hub.mode"];
         const token = req.query["hub.verify_token"];
@@ -32,40 +31,30 @@ module.exports = async (req, res) => {
         return res.status(403).send("Forbidden");
     }
 
-    // POST
     if (req.method === "POST") {
         const body = req.body;
         
-        // Enviar respuesta desde el frontend
         if (body.action === "send_reply") {
             try {
                 const { message_type, recipient_id, message, comment_id } = body;
-                
                 if (message_type === "comment") {
-                    // Responder a un comentario
                     await replyToComment(comment_id, message);
                 } else {
-                    // Enviar DM
                     await sendDirectMessage(recipient_id, message);
                 }
-                
                 return res.status(200).json({ success: true });
             } catch (error) {
-                console.error("Error enviando respuesta:", error);
+                console.error("Error sending reply:", error);
                 return res.status(500).json({ error: error.message });
             }
         }
         
-        console.log("Webhook recibido:", JSON.stringify(body, null, 2));
-
         try {
-            // Instagram
             if (body.object === "instagram") {
                 const entry = body.entry?.[0];
                 const messaging = entry?.messaging?.[0];
                 const changes = entry?.changes?.[0];
 
-                // DMs
                 if (messaging && messaging.message && !messaging.message.is_echo) {
                     await processMessage({
                         sourceId: messaging.sender.id,
@@ -76,7 +65,6 @@ module.exports = async (req, res) => {
                     });
                 }
 
-                // Comentarios
                 if (changes && changes.field === "comments") {
                     const comment = changes.value;
                     await processMessage({
@@ -92,7 +80,6 @@ module.exports = async (req, res) => {
                 }
             }
 
-            // WhatsApp
             if (body.object === "whatsapp_business_account") {
                 const entry = body.entry?.[0];
                 const changes = entry?.changes?.[0];
@@ -114,85 +101,55 @@ module.exports = async (req, res) => {
 
             return res.status(200).send("OK");
         } catch (error) {
-            console.error("Error procesando webhook:", error);
-            return res.status(500).send("Error interno");
+            console.error("Webhook Error:", error);
+            return res.status(500).send("Error");
         }
     }
-
     return res.status(405).send("Method Not Allowed");
 };
 
-// Responder a un comentario de Instagram
 async function replyToComment(commentId, messageText) {
     return new Promise((resolve, reject) => {
-        const postData = JSON.stringify({
-            message: messageText
-        });
-
+        const postData = JSON.stringify({ message: messageText });
         const options = {
             hostname: 'graph.facebook.com',
             port: 443,
             path: `/v21.0/${commentId}/replies?access_token=${META_ACCESS_TOKEN}`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            }
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
         };
-
         const request = https.request(options, (response) => {
             let data = '';
             response.on('data', chunk => data += chunk);
             response.on('end', () => {
-                if (response.statusCode >= 200 && response.statusCode < 300) {
-                    console.log("Respuesta a comentario enviada:", data);
-                    resolve(JSON.parse(data));
-                } else {
-                    console.error("Error de Instagram API:", data);
-                    reject(new Error(data));
-                }
+                if (response.statusCode >= 200 && response.statusCode < 300) resolve(JSON.parse(data));
+                else reject(new Error(data));
             });
         });
-
         request.on('error', reject);
         request.write(postData);
         request.end();
     });
 }
 
-// Enviar DM de Instagram
 async function sendDirectMessage(recipientId, messageText) {
     return new Promise((resolve, reject) => {
-        const postData = JSON.stringify({
-            recipient: { id: recipientId },
-            message: { text: messageText }
-        });
-
+        const postData = JSON.stringify({ recipient: { id: recipientId }, message: { text: messageText } });
         const options = {
             hostname: 'graph.facebook.com',
             port: 443,
             path: `/v21.0/me/messages?access_token=${META_ACCESS_TOKEN}`,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            }
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
         };
-
         const request = https.request(options, (response) => {
             let data = '';
             response.on('data', chunk => data += chunk);
             response.on('end', () => {
-                if (response.statusCode >= 200 && response.statusCode < 300) {
-                    console.log("DM enviado:", data);
-                    resolve(JSON.parse(data));
-                } else {
-                    console.error("Error de Instagram API:", data);
-                    reject(new Error(data));
-                }
+                if (response.statusCode >= 200 && response.statusCode < 300) resolve(JSON.parse(data));
+                else reject(new Error(data));
             });
         });
-
         request.on('error', reject);
         request.write(postData);
         request.end();
@@ -201,30 +158,13 @@ async function sendDirectMessage(recipientId, messageText) {
 
 async function processMessage({ sourceId, sourceType, messageType, name, text, metaMsgId, commentId, postId }) {
     const field = sourceType === "whatsapp" ? "wa_id" : "ig_id";
-
-    // Buscar o crear cliente
     let customerRef;
-    const customerSnap = await db.collection("customers")
-        .where(field, "==", sourceId)
-        .limit(1)
-        .get();
+    const customerSnap = await db.collection("customers").where(field, "==", sourceId).limit(1).get();
+    if (!customerSnap.empty) customerRef = customerSnap.docs[0].ref;
+    else customerRef = await db.collection("customers").add({ name: name || "Cliente Nuevo", [field]: sourceId, created_at: admin.firestore.FieldValue.serverTimestamp() });
 
-    if (!customerSnap.empty) {
-        customerRef = customerSnap.docs[0].ref;
-    } else {
-        customerRef = await db.collection("customers").add({
-            name: name || "Cliente Nuevo",
-            [field]: sourceId,
-            created_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-    }
-
-    // Para comentarios: cada comentario es una "conversación" separada
-    // Para DMs: una conversación por cliente
     let conversationRef;
-    
     if (messageType === "comment" && commentId) {
-        // Crear conversación específica para este comentario
         conversationRef = await db.collection("conversations").add({
             customer_id: customerRef.id,
             status: "open",
@@ -237,19 +177,10 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
             updated_at: admin.firestore.FieldValue.serverTimestamp()
         });
     } else {
-        // Para DMs: buscar conversación existente o crear nueva
-        const convSnap = await db.collection("conversations")
-            .where("customer_id", "==", customerRef.id)
-            .where("status", "==", "open")
-            .where("message_type", "==", "dm")
-            .limit(1)
-            .get();
-
+        const convSnap = await db.collection("conversations").where("customer_id", "==", customerRef.id).where("status", "==", "open").where("message_type", "==", "dm").limit(1).get();
         if (!convSnap.empty) {
             conversationRef = convSnap.docs[0].ref;
-            await conversationRef.update({
-                updated_at: admin.firestore.FieldValue.serverTimestamp()
-            });
+            await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
         } else {
             conversationRef = await db.collection("conversations").add({
                 customer_id: customerRef.id,
@@ -262,8 +193,6 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
             });
         }
     }
-
-    // Guardar mensaje
     await db.collection("messages").add({
         conversation_id: conversationRef.id,
         customer_id: customerRef.id,
@@ -273,6 +202,4 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
         meta_msg_id: metaMsgId,
         comment_id: commentId || null
     });
-
-    console.log(`[${messageType.toUpperCase()}] Mensaje guardado: ${(text || "").substring(0, 50)}...`);
 }
