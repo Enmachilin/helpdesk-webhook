@@ -37,15 +37,34 @@ module.exports = async (req, res) => {
         if (body.action === "send_reply") {
             try {
                 const { message_type, recipient_id, message, comment_id } = body;
+                console.log(`Sending reply: type=${message_type}, to=${recipient_id || comment_id}`);
+                
+                let result;
                 if (message_type === "comment") {
-                    await replyToComment(comment_id, message);
+                    if (!comment_id) throw new Error("Missing comment_id for comment reply");
+                    result = await callMetaAPI(`/${comment_id}/replies`, { message });
                 } else {
-                    await sendDirectMessage(recipient_id, message);
+                    if (!recipient_id) throw new Error("Missing recipient_id for message");
+                    result = await callMetaAPI(`/me/messages`, {
+                        recipient: { id: recipient_id },
+                        message: { text: message }
+                    });
                 }
-                return res.status(200).json({ success: true });
+                
+                return res.status(200).json({ success: true, meta_response: result });
             } catch (error) {
-                console.error("Error sending reply:", error);
-                return res.status(500).json({ error: error.message });
+                console.error("Meta API Call Failed:", error.message);
+                let metaError = error.message;
+                try {
+                    const parsed = JSON.parse(error.message);
+                    if (parsed.error) metaError = parsed.error.message;
+                } catch(e) {}
+                
+                return res.status(500).json({ 
+                    success: false, 
+                    error: metaError,
+                    details: error.message 
+                });
             }
         }
         
@@ -53,31 +72,38 @@ module.exports = async (req, res) => {
             if (body.object === "instagram") {
                 const entries = body.entry || [];
                 for (const entry of entries) {
-                    const messaging = entry?.messaging?.[0];
-                    const change = entry?.changes?.[0];
-
-                    if (messaging && messaging.message && !messaging.message.is_echo) {
-                        await processMessage({
-                            sourceId: messaging.sender.id,
-                            sourceType: "instagram",
-                            messageType: "dm",
-                            text: messaging.message.text,
-                            metaMsgId: messaging.message.mid
-                        });
+                    const messaging = entry?.messaging;
+                    if (messaging && messaging.length > 0) {
+                        for (const msgEvent of messaging) {
+                            if (msgEvent.message && !msgEvent.message.is_echo) {
+                                await processMessage({
+                                    sourceId: msgEvent.sender.id,
+                                    sourceType: "instagram",
+                                    messageType: "dm",
+                                    text: msgEvent.message.text,
+                                    metaMsgId: msgEvent.message.mid
+                                });
+                            }
+                        }
                     }
 
-                    if (change && change.field === "comments") {
-                        const comment = change.value;
-                        await processMessage({
-                            sourceId: comment.from.id,
-                            sourceType: "instagram",
-                            messageType: "comment",
-                            name: comment.from.username,
-                            text: comment.text,
-                            metaMsgId: comment.id,
-                            commentId: comment.id,
-                            postId: comment.media?.id
-                        });
+                    const changes = entry?.changes;
+                    if (changes && changes.length > 0) {
+                        for (const change of changes) {
+                            if (change.field === "comments") {
+                                const comment = change.value;
+                                await processMessage({
+                                    sourceId: comment.from.id,
+                                    sourceType: "instagram",
+                                    messageType: "comment",
+                                    name: comment.from.username,
+                                    text: comment.text,
+                                    metaMsgId: comment.id,
+                                    commentId: comment.id,
+                                    postId: comment.media?.id
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -85,94 +111,95 @@ module.exports = async (req, res) => {
             if (body.object === "whatsapp_business_account") {
                 const entries = body.entry || [];
                 for (const entry of entries) {
-                    const change = entry?.changes?.[0];
-                    const value = change?.value;
-                    const message = value?.messages?.[0];
-                    const contact = value?.contacts?.[0];
-
-                    if (message) {
-                        await processMessage({
-                            sourceId: contact.wa_id,
-                            sourceType: "whatsapp",
-                            messageType: "dm",
-                            name: contact.profile?.name,
-                            text: message.text?.body,
-                            metaMsgId: message.id
-                        });
+                    const changes = entry?.changes;
+                    if (changes && changes.length > 0) {
+                        for (const change of changes) {
+                            const value = change?.value;
+                            const messages = value?.messages;
+                            const contacts = value?.contacts;
+                            if (messages && messages.length > 0) {
+                                const msg = messages[0];
+                                const contact = contacts?.[0];
+                                await processMessage({
+                                    sourceId: contact?.wa_id || msg.from,
+                                    sourceType: "whatsapp",
+                                    messageType: "dm",
+                                    name: contact?.profile?.name || "WhatsApp User",
+                                    text: msg.text?.body || "[Media/Other]",
+                                    metaMsgId: msg.id
+                                });
+                            }
+                        }
                     }
                 }
             }
 
             return res.status(200).send("OK");
         } catch (error) {
-            console.error("Webhook Internal Error:", error);
+            console.error("Webhook Processing Error:", error);
             return res.status(500).send(error.message);
         }
     }
+
     return res.status(405).send("Method Not Allowed");
 };
 
-async function replyToComment(commentId, messageText) {
+async function callMetaAPI(endpoint, data) {
     return new Promise((resolve, reject) => {
-        const postData = JSON.stringify({ message: messageText });
+        const postData = JSON.stringify(data);
         const options = {
             hostname: 'graph.facebook.com',
             port: 443,
-            path: `/v21.0/${commentId}/replies?access_token=${META_ACCESS_TOKEN}`,
+            path: `/v21.0${endpoint}?access_token=${META_ACCESS_TOKEN}`,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
         };
-        const request = https.request(options, (response) => {
-            let data = '';
-            response.on('data', chunk => data += chunk);
-            response.on('end', () => {
-                if (response.statusCode >= 200 && response.statusCode < 300) resolve(JSON.parse(data));
-                else reject(new Error(data));
-            });
-        });
-        request.on('error', reject);
-        request.write(postData);
-        request.end();
-    });
-}
 
-async function sendDirectMessage(recipientId, messageText) {
-    return new Promise((resolve, reject) => {
-        const postData = JSON.stringify({ recipient: { id: recipientId }, message: { text: messageText } });
-        const options = {
-            hostname: 'graph.facebook.com',
-            port: 443,
-            path: `/v21.0/me/messages?access_token=${META_ACCESS_TOKEN}`,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-        };
         const request = https.request(options, (response) => {
-            let data = '';
-            response.on('data', chunk => data += chunk);
+            let resData = '';
+            response.on('data', chunk => resData += chunk);
             response.on('end', () => {
-                if (response.statusCode >= 200 && response.statusCode < 300) resolve(JSON.parse(data));
-                else reject(new Error(data));
+                if (response.statusCode >= 200 && response.statusCode < 300) {
+                    resolve(JSON.parse(resData));
+                } else {
+                    reject(new Error(resData));
+                }
             });
         });
-        request.on('error', reject);
+
+        request.on('error', (e) => reject(new Error(`Network Error: ${e.message}`)));
         request.write(postData);
         request.end();
     });
 }
 
 async function processMessage({ sourceId, sourceType, messageType, name, text, metaMsgId, commentId, postId }) {
+    if (!sourceId || !text) return;
+
     const field = sourceType === "whatsapp" ? "wa_id" : "ig_id";
     let customerRef;
+    
     const customerSnap = await db.collection("customers").where(field, "==", sourceId).limit(1).get();
     if (!customerSnap.empty) {
         customerRef = customerSnap.docs[0].ref;
     } else {
-        customerRef = await db.collection("customers").add({ name: name || "Cliente Nuevo", [field]: sourceId, created_at: admin.firestore.FieldValue.serverTimestamp() });
+        customerRef = await db.collection("customers").add({ 
+            name: name || "Cliente Nuevo", 
+            [field]: sourceId, 
+            created_at: admin.firestore.FieldValue.serverTimestamp() 
+        });
     }
 
     let conversationRef;
     if (messageType === "comment" && commentId) {
-        const commentConvSnap = await db.collection("conversations").where("comment_id", "==", commentId).limit(1).get();
+        const commentConvSnap = await db.collection("conversations")
+            .where("comment_id", "==", commentId)
+            .limit(1)
+            .get();
+            
         if (!commentConvSnap.empty) {
             conversationRef = commentConvSnap.docs[0].ref;
             await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
@@ -190,8 +217,13 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
             });
         }
     } else {
-        const dmsSnap = await db.collection("conversations").where("customer_id", "==", customerRef.id).where("status", "==", "open").get();
+        const dmsSnap = await db.collection("conversations")
+            .where("customer_id", "==", customerRef.id)
+            .where("status", "==", "open")
+            .get();
+        
         const existingDm = dmsSnap.docs.find(d => d.data().message_type === "dm");
+        
         if (existingDm) {
             conversationRef = existingDm.ref;
             await conversationRef.update({ updated_at: admin.firestore.FieldValue.serverTimestamp() });
@@ -207,6 +239,7 @@ async function processMessage({ sourceId, sourceType, messageType, name, text, m
             });
         }
     }
+    
     await db.collection("messages").add({
         conversation_id: conversationRef.id,
         customer_id: customerRef.id,
