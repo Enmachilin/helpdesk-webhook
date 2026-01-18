@@ -20,8 +20,8 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
-// TOKEN DEFINITIVO de la página "Mundo Cuarzos" (ID: 457641490771604)
-const META_ACCESS_TOKEN = "EAAdxJndK0e0BQYdsyqd0WttL3xPxavJbGkpzmaY2BJvT43lts4Np8aUrF12R7O5VSweZCN2sxTkKoN2auLlwyP66YyJ2xv00pUsGDGlDGwKUCBkZAdA7eCcEgKN4On3GGNIehY1hfZBRdInNGcCU3mA91LJErwb4nb4AztlcvHkAoPgm5cJSiwDkthFiWd6ku41yZAazdg6nARoVlDVvoSlp6rrRnJdT8ZBMlaSrXM726dJUg9jDToCkZD";
+// TOKEN DEFINITIVO con permisos Instagram: Mundo Cuarzos (ID: 457641490771604)
+const META_ACCESS_TOKEN = "EAAdxJndK0e0BQVlxWknDLPGjyawPIse6NDnDa3G6H1MkZAM5HRHzeyPl44eZAgUGLPVBFh0Pm4kk8wsObCexJNmECZC41A1BqFR5LXrB7M7VyJgjrJsG4LSJOyjJfWTWFUVRCSn4aSISmXXAIeV2enFZC82ln6nLYWp7ciLkGmUGnEbZCY92VRXHrXX70It4HIgZDZD";
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
