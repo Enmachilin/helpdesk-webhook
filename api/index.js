@@ -20,8 +20,8 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
-// Instagram Graph API Token - Mundo Cuarzos
-const META_ACCESS_TOKEN = "IGAAKpczQpiVVBZAGJZAQ1loRnhndy1TbXRtRUl4eDM0WjRpVGVaS3RVZA1VyYWUyMGhiRjB4N01vUlFBM0lpaEZAtZAV9NSGlSelZAsaXMwU2ZA4UThWZA2wyZAjkzaHNLQ0kwcDJneW80N1kwQ09Rc2hOWmVCelh2WjFGWjJSQmMtU2RMRQZDZD";
+// Page Access Token - Mundo Cuarzos (Testing)
+const META_ACCESS_TOKEN = "EAAdxJndK0e0BQWaouIRBJdjWUUoSk6JQE9iPRMQHTYppicypQMs5TIOpnBcr6h6ah0CIZBu8VoPZAzphqx5rqucgJkLV90dyXxq9ZBXToGl8lFwHAycn4vk4leVjbZCoRRJ4PvxZCX229TRT7X6UDJhsfBrs0fMa4ciiEVJpbuiFKTmZA8OZAGGK3GIZCX2SASbmDCDBTIN9SMJYUm4J704eY3EZCpAZDZD";
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
