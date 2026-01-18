@@ -20,7 +20,8 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 const VERIFY_TOKEN = process.env.HUB_VERIFY_TOKEN || "helpdesk_secret_2024";
-const META_ACCESS_TOKEN = "EAAdxJndK0e0BQU9b3cmdEUk1TfuJpKGiPIDkCRlF3AjJIolv4xVmh24ZATSY4GGcjjNBZANn3WqfYw17mqpUxGhKUzBWoAUsm65BIWV9t03VsPFRejVs2XCU7q94ZBOP91LT90u02TEUCsjZClD2VE0MaYeeVZBwqko1ZBd0LOAAJ9Le74Qhg1OnQbYExTKHhX2AZDZD";
+// TOKEN DEFINITIVO de la página "Mundo Cuarzos" (ID: 457641490771604)
+const META_ACCESS_TOKEN = "EAAdxJndK0e0BQYdsyqd0WttL3xPxavJbGkpzmaY2BJvT43lts4Np8aUrF12R7O5VSweZCN2sxTkKoN2auLlwyP66YyJ2xv00pUsGDGlDGwKUCBkZAdA7eCcEgKN4On3GGNIehY1hfZBRdInNGcCU3mA91LJErwb4nb4AztlcvHkAoPgm5cJSiwDkthFiWd6ku41yZAazdg6nARoVlDVvoSlp6rrRnJdT8ZBMlaSrXM726dJUg9jDToCkZD";
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -51,8 +52,8 @@ module.exports = async (req, res) => {
                     result = await callMetaAPI(`/${comment_id}/replies`, { message });
                 } else {
                     if (!recipient_id) throw new Error("Missing recipient_id for DM reply");
-                    // ID de página explícito proporcionado por el usuario: Mundocuarzos
-                    const PAGE_ID = "61586515535219";
+                    // ID de página definitivo: Mundo Cuarzos (457641490771604)
+                    const PAGE_ID = "457641490771604";
                     result = await callMetaAPI(`/${PAGE_ID}/messages`, {
                         recipient: { id: recipient_id },
                         message: { text: message }
